@@ -17,23 +17,6 @@ export default function CoursesPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedCategory, setSelectedCategory] = useState("Tous");
 
-    const handleBuy = async (course: Course) => {
-        try {
-            const response = await fetch('/api/stripe/checkout', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    courseId: course.id,
-                    title: course.title,
-                })
-            });
-            const { url } = await response.json();
-            if (url) window.location.href = url;
-        } catch (err) {
-            console.error("Checkout failed:", err);
-        }
-    };
-
     const [user, setUser] = useState<any>(null);
     const [purchases, setPurchases] = useState<any[]>([]);
 

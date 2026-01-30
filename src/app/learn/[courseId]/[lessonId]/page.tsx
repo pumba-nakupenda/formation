@@ -36,7 +36,6 @@ export default function LearnPage() {
     const [user, setUser] = useState<any>(null);
     const [course, setCourse] = useState<Course | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isPurchased, setIsPurchased] = useState(false);
     const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -47,31 +46,6 @@ export default function LearnPage() {
                 // Check auth
                 const { data: { user } } = await supabase.auth.getUser();
                 setUser(user);
-
-                if (user) {
-                    // Bypassing check for now as requested
-                    setIsPurchased(true);
-
-                    /* 
-                    const { data: purchase } = await supabase
-                         .from('user_purchases')
-                         .select('*')
-                         .eq('user_id', user.id)
-                         .eq('course_id', courseId)
-                         .eq('status', 'completed')
-                         .single();
-                     
-                     if (purchase) {
-                         setIsPurchased(true);
-                     } else {
-                         // Check if course is free
-                         const data = await getCourseById(courseId);
-                         if (data && data.price_fcfa === 0) {
-                             setIsPurchased(true);
-                         }
-                     }
-                     */
-                }
 
                 // Load course
                 const data = await getCourseById(courseId);
@@ -103,23 +77,6 @@ export default function LearnPage() {
         }
     };
 
-    const handleBuy = async () => {
-        try {
-            const response = await fetch('/api/stripe/checkout', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    courseId,
-                    title: course?.title,
-                })
-            });
-            const { url } = await response.json();
-            if (url) window.location.href = url;
-        } catch (err) {
-            console.error("Checkout failed:", err);
-        }
-    };
-
     if (loading) {
         return (
             <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black">
@@ -141,37 +98,6 @@ export default function LearnPage() {
                 <Link href="/login" className="relative z-10">
                     <Button className="bg-primary hover:bg-primary/90 text-white px-10 rounded-2xl h-16 font-black shadow-2xl shadow-primary/20 text-sm tracking-widest">DÉVERROUILLER MAINTENANT</Button>
                 </Link>
-            </div>
-        );
-    }
-
-    if (!isPurchased) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-screen gap-8 bg-[#050505] p-8 text-center relative overflow-hidden">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/10 blur-[120px] rounded-full" />
-                <div className="h-24 w-24 rounded-[2rem] bg-zinc-900 border border-white/5 flex items-center justify-center shadow-2xl relative z-10">
-                    <Lock className="h-10 w-10 text-primary" />
-                </div>
-                <div className="space-y-4 relative z-10">
-                    <h2 className="text-5xl font-black tracking-tighter uppercase text-white">CONTENU VERROUILLÉ</h2>
-                    <p className="text-zinc-500 text-lg font-medium max-w-xl mx-auto">
-                        Cette leçon fait partie de la formation <span className="text-white font-bold">"{course?.title}"</span>.
-                        Obtenez un accès à vie pour débloquer toutes les stratégies.
-                    </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-4 relative z-10">
-                    <Button
-                        onClick={handleBuy}
-                        className="bg-primary hover:bg-primary/90 text-white px-12 rounded-2xl h-16 font-black shadow-2xl shadow-primary/30 text-sm tracking-widest"
-                    >
-                        S'INSCRIRE À LA FORMATION
-                    </Button>
-                    <Link href="/dashboard">
-                        <Button variant="outline" className="border-white/10 hover:bg-white/5 text-white px-10 rounded-2xl h-16 font-black text-sm tracking-widest">
-                            RETOUR AU CATALOGUE
-                        </Button>
-                    </Link>
-                </div>
             </div>
         );
     }
