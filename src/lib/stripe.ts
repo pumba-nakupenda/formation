@@ -4,20 +4,16 @@ let stripeInstance: Stripe | null = null;
 
 export function getStripe(): Stripe {
     if (!stripeInstance) {
-        // If the key is missing during build time, we should probably not crash 
-        // unless we are actually trying to use it.
-        // However, this function is called at runtime.
-        const key = process.env.STRIPE_SECRET_KEY;
+        let key = process.env.STRIPE_SECRET_KEY;
         
         if (!key) {
-             // Fallback for build time to prevent "Neither apiKey" error if this gets evaluated?
-             // But really, we want to throw if it's missing at runtime.
-             console.warn("STRIPE_SECRET_KEY is missing. Stripe features will fail.");
-             throw new Error("STRIPE_SECRET_KEY is missing");
+             console.warn("⚠️ STRIPE_SECRET_KEY is missing. Using a placeholder for build purposes.");
+             // Placeholder to prevent build crash. Runtime calls will fail (as they should) if key is invalid.
+             key = "sk_test_placeholder_for_build"; 
         }
 
         stripeInstance = new Stripe(key, {
-            apiVersion: '2026-01-28.clover' as any, // Cast to any to avoid TS errors with mismatched library versions
+            apiVersion: '2026-01-28.clover' as any,
             typescript: true,
         });
     }
