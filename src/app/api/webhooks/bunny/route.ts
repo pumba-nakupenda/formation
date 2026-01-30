@@ -14,9 +14,9 @@ export async function POST(request: Request) {
         );
 
         const body = await request.json();
-        const { TriggeredBy, VideoGuid, VideoLibraryId, Status } = body;
+        const { TriggeredBy, VideoGuid, VideoLibraryId, Status, CollectionId } = body;
 
-        console.log(`[BUNNY_WEBHOOK] Event received: Status=${Status}, VideoGuid=${VideoGuid}`);
+        console.log(`[BUNNY_WEBHOOK] Event received: Status=${Status}, VideoGuid=${VideoGuid}, CollectionId=${CollectionId}`);
 
         // Status 4 = Finished (Encoded & Ready)
         if (Status === 4) {
@@ -34,19 +34,14 @@ export async function POST(request: Request) {
             }
 
             const video = await videoResponse.json();
-            
-            // 2. Identify or Create Course (using Library Name/ID logic)
-            // Since courses.id is UUID, we can't force VideoLibraryId into it directly unless it's a UUID.
-            // We'll try to find a course that might match, or create a generic one.
-            
-            // Fetch library name for the course title
+
+            // 2. Identify or Create Course
             const libResponse = await fetch(`https://api.bunny.net/videolibrary/${VideoLibraryId}`, {
                 headers: { 'AccessKey': BUNNY_API_KEY! }
             });
             const lib = await libResponse.json();
             const courseTitle = lib.Name || 'Nouvelle Formation Bunny';
 
-            // Try to find existing course by title to avoid duplicates
             let { data: course } = await supabaseAdmin
                 .from('courses')
                 .select('*')
@@ -54,7 +49,6 @@ export async function POST(request: Request) {
                 .single();
 
             if (!course) {
-                // Create new course if not found
                 const { data: newCourse, error: courseError } = await supabaseAdmin
                     .from('courses')
                     .insert({
@@ -65,38 +59,58 @@ export async function POST(request: Request) {
                     })
                     .select()
                     .single();
-                
+
                 if (courseError) throw new Error(`Course creation failed: ${courseError.message}`);
                 course = newCourse;
             }
 
-            // 3. Ensure Module exists
-            let { data: module } = await supabaseAdmin
+            // 3. Ensure Module exists (Map Collection -> Module)
+            let moduleTitle = 'PARCOURS STRATÉGIQUE';
+
+            if (CollectionId) {
+                try {
+                    const collectionResponse = await fetch(`https://video.bunnycdn.com/library/${VideoLibraryId}/collections/${CollectionId}`, {
+                        headers: { 'AccessKey': BUNNY_API_KEY! }
+                    });
+
+                    if (collectionResponse.ok) {
+                        const collection = await collectionResponse.json();
+                        if (collection.name || collection.Name) {
+                            moduleTitle = collection.name || collection.Name;
+                        }
+                    }
+                } catch (e) {
+                    console.error("[BUNNY_WEBHOOK] Failed to fetch collection name", e);
+                }
+            }
+
+            let { data: courseModule } = await supabaseAdmin
                 .from('modules')
                 .select('*')
                 .eq('course_id', course.id)
-                .eq('title', 'PARCOURS STRATÉGIQUE')
+                .eq('title', moduleTitle)
                 .single();
 
-            if (!module) {
-                const { data: newModule, error: moduleError } = await supabaseAdmin
+            if (!courseModule) {
+                const { data: newCourseModule, error: courseModuleError } = await supabaseAdmin
                     .from('modules')
                     .insert({
                         course_id: course.id,
-                        title: 'PARCOURS STRATÉGIQUE',
+                        title: moduleTitle,
                         order: 1
                     })
                     .select()
                     .single();
 
-                if (moduleError) throw new Error(`Module creation failed: ${moduleError.message}`);
-                module = newModule;
+                if (courseModuleError) throw new Error(`Module creation failed: ${courseModuleError.message}`);
+                courseModule = newCourseModule;
             }
+
 
             // 4. Create/Update Lesson
             // We use the embed URL as a unique identifier or the title since IDs are UUIDs
             const embedUrl = `https://iframe.mediadelivery.net/embed/${VideoLibraryId}/${VideoGuid}`;
-            
+
             // Check if lesson exists by video_url (which contains the GUID)
             const { data: existingLesson } = await supabaseAdmin
                 .from('lessons')
@@ -105,16 +119,16 @@ export async function POST(request: Request) {
                 .single();
 
             if (!existingLesson) {
-                 const { error: lessonError } = await supabaseAdmin
-                .from('lessons')
-                .insert({
-                    module_id: module.id, // Use the valid UUID from the module
-                    title: video.title || 'Nouvelle Leçon',
-                    video_url: embedUrl,
-                    duration: Math.round(video.length / 60).toString() || "10",
-                    order: 0, // You might want to query max order + 1 here
-                    content: "Contenu synchronisé automatiquement depuis Bunny."
-                });
+                const { error: lessonError } = await supabaseAdmin
+                    .from('lessons')
+                    .insert({
+                        module_id: courseModule.id, // Use the valid UUID from the module
+                        title: video.title || 'Nouvelle Leçon',
+                        video_url: embedUrl,
+                        duration: Math.round(video.length / 60).toString() || "10",
+                        order: 0, // You might want to query max order + 1 here
+                        content: "Contenu synchronisé automatiquement depuis Bunny."
+                    });
 
                 if (lessonError) {
                     console.error(`[BUNNY_WEBHOOK] Lesson insert error:`, lessonError);
