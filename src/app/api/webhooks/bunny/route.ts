@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 /**
  * Bunny.net Webhook Handler
  * Doc: https://docs.bunny.net/docs/stream-webhook
  */
 export async function POST(request: Request) {
     try {
+        // Initialize Supabase inside the request handler to avoid build-time errors
+        const supabaseAdmin = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+
         const body = await request.json();
         const { TriggeredBy, VideoGuid, VideoLibraryId, Status } = body;
 
