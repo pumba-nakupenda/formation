@@ -74,27 +74,22 @@ export async function GET() {
             }
             coursesSynced++;
 
-            // 3. Ensure Module
-            const { data: module, error: moduleError } = await supabase
-                .from('modules')
-                .upsert({
-                    course_id: course.id,
-                    title: 'PARCOURS STRATÉGIQUE',
-                    order: 1
-                }, { onConflict: 'course_id, title' })
-                .select()
-                .single();
-
-            const activeModuleId = module?.id || (await supabase
-                .from('modules')
-                .select('id')
-                .eq('course_id', course.id)
-                .eq('title', 'PARCOURS STRATÉGIQUE')
-                .single()).data?.id;
-
-            if (!activeModuleId) {
-                logs.push(`   ⚠️ Impossible de créer le module, vidéos ignorées.`);
-                continue;
+            // 2.1 Fetch Collections to map IDs to Names
+            const collectionsMap = new Map<string, string>();
+            try {
+                const collectionsResponse = await fetch(`https://video.bunnycdn.com/library/${lib.Id}/collections`, {
+                    headers: { 'AccessKey': BUNNY_API_KEY }
+                });
+                if (collectionsResponse.ok) {
+                    const collectionsData = await collectionsResponse.json();
+                    const collections = collectionsData.items || [];
+                    collections.forEach((c: any) => {
+                        collectionsMap.set(c.guid, c.name || c.Name);
+                    });
+                    logs.push(`   📑 ${collections.length} collections trouvées.`);
+                }
+            } catch (e) {
+                logs.push(`   ⚠️ Impossible de récupérer les collections.`);
             }
 
             // 4. Fetch Videos
@@ -112,11 +107,42 @@ export async function GET() {
             logs.push(`   🎥 ${videos.length} vidéos détectées.`);
 
             for (const video of videos) {
+                // Determine Module Title
+                let moduleTitle = 'PARCOURS STRATÉGIQUE'; // Default
+                if (video.collectionId && collectionsMap.has(video.collectionId)) {
+                    moduleTitle = collectionsMap.get(video.collectionId)!;
+                }
+
+                // Upsert Module
+                const { data: module } = await supabase
+                    .from('modules')
+                    .select('id')
+                    .eq('course_id', course.id)
+                    .eq('title', moduleTitle)
+                    .single();
+
+                let activeModuleId = module?.id;
+
+                if (!activeModuleId) {
+                    const { data: newModule } = await supabase
+                        .from('modules')
+                        .upsert({
+                            course_id: course.id,
+                            title: moduleTitle,
+                            order: 1 // You could map collection order if available
+                        }, { onConflict: 'course_id, title' })
+                        .select()
+                        .single();
+                    activeModuleId = newModule?.id;
+                }
+
+                if (!activeModuleId) continue;
+
                 const embedUrl = `https://iframe.mediadelivery.net/embed/${lib.Id}/${video.guid}`;
                 const { error: lessonError } = await supabase
                     .from('lessons')
                     .upsert({
-                        id: video.guid,
+                        id: video.guid, // Use Bunny GUID as ID
                         module_id: activeModuleId,
                         title: video.title || 'Sans titre',
                         video_url: embedUrl,

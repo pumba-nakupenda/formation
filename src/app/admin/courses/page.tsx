@@ -41,6 +41,26 @@ export default function AdminCoursesPage() {
 
     const filtered = courses.filter(c => c.title.toLowerCase().includes(search.toLowerCase()));
 
+    const [syncing, setSyncing] = useState(false);
+
+    const handleSync = async () => {
+        setSyncing(true);
+        try {
+            const res = await fetch('/api/sync-bunny');
+            const data = await res.json();
+            if (data.success) {
+                alert(`Synchronisation réussie !\n${data.details}`);
+                window.location.reload();
+            } else {
+                alert(`Erreur de synchronisation :\n${data.error}`);
+            }
+        } catch (e) {
+            alert("Erreur réseau lors de la synchronisation.");
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
@@ -48,11 +68,24 @@ export default function AdminCoursesPage() {
                     <h1 className="text-3xl font-black text-white tracking-tight">Gestion des Cours</h1>
                     <p className="text-zinc-500 text-sm font-medium">Créez et modifiez vos programmes de formation.</p>
                 </div>
-                <Link href="/admin/courses/new">
-                    <Button className="bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl px-6 h-12">
-                        <Plus className="mr-2 h-4 w-4" /> Créer un cours
+                <div className="flex gap-4">
+                    <Button
+                        onClick={handleSync}
+                        disabled={syncing}
+                        className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl px-6 h-12 border border-white/5"
+                    >
+                        {syncing ? (
+                            <>Synchronisation...</>
+                        ) : (
+                            <>🔄 Synchroniser Bunny</>
+                        )}
                     </Button>
-                </Link>
+                    <Link href="/admin/courses/new">
+                        <Button className="bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl px-6 h-12">
+                            <Plus className="mr-2 h-4 w-4" /> Créer un cours
+                        </Button>
+                    </Link>
+                </div>
             </div>
 
             <div className="bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden">
