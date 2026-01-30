@@ -34,62 +34,94 @@ export async function POST(request: Request) {
             }
 
             const video = await videoResponse.json();
-
-            // 2. Identify or Create Course (using Library Name as default)
-            // Note: For a more advanced setup, we would use Collections as Courses.
+            
+            // 2. Identify or Create Course (using Library Name/ID logic)
+            // Since courses.id is UUID, we can't force VideoLibraryId into it directly unless it's a UUID.
+            // We'll try to find a course that might match, or create a generic one.
+            
+            // Fetch library name for the course title
             const libResponse = await fetch(`https://api.bunny.net/videolibrary/${VideoLibraryId}`, {
                 headers: { 'AccessKey': BUNNY_API_KEY! }
             });
             const lib = await libResponse.json();
+            const courseTitle = lib.Name || 'Nouvelle Formation Bunny';
 
-            const { data: course } = await supabaseAdmin
+            // Try to find existing course by title to avoid duplicates
+            let { data: course } = await supabaseAdmin
                 .from('courses')
-                .upsert({
-                    id: VideoLibraryId.toString(),
-                    title: lib.Name || 'Nouvelle Formation',
-                    category: 'Management',
-                    instructor_name: 'Expert LOLLY'
-                }, { onConflict: 'id' })
-                .select()
+                .select('*')
+                .eq('title', courseTitle)
                 .single();
 
-            if (!course) throw new Error("Course upsert failed");
+            if (!course) {
+                // Create new course if not found
+                const { data: newCourse, error: courseError } = await supabaseAdmin
+                    .from('courses')
+                    .insert({
+                        title: courseTitle,
+                        category: 'Management',
+                        instructor_name: 'Expert LOLLY',
+                        description: `Formation importée depuis Bunny (Lib: ${VideoLibraryId})`
+                    })
+                    .select()
+                    .single();
+                
+                if (courseError) throw new Error(`Course creation failed: ${courseError.message}`);
+                course = newCourse;
+            }
 
             // 3. Ensure Module exists
-            const { data: module } = await supabaseAdmin
+            let { data: module } = await supabaseAdmin
                 .from('modules')
-                .upsert({
-                    course_id: course.id,
-                    title: 'PARCOURS STRATÉGIQUE',
-                    order: 1
-                }, { onConflict: 'course_id, title' })
-                .select()
+                .select('*')
+                .eq('course_id', course.id)
+                .eq('title', 'PARCOURS STRATÉGIQUE')
                 .single();
 
-            const moduleId = module?.id || (await supabaseAdmin
-                .from('modules')
-                .select('id')
-                .eq('course_id', course.id)
-                .single()).data?.id;
+            if (!module) {
+                const { data: newModule, error: moduleError } = await supabaseAdmin
+                    .from('modules')
+                    .insert({
+                        course_id: course.id,
+                        title: 'PARCOURS STRATÉGIQUE',
+                        order: 1
+                    })
+                    .select()
+                    .single();
 
-            // 4. Upsert Lesson
+                if (moduleError) throw new Error(`Module creation failed: ${moduleError.message}`);
+                module = newModule;
+            }
+
+            // 4. Create/Update Lesson
+            // We use the embed URL as a unique identifier or the title since IDs are UUIDs
             const embedUrl = `https://iframe.mediadelivery.net/embed/${VideoLibraryId}/${VideoGuid}`;
-
-            const { error: lessonError } = await supabaseAdmin
+            
+            // Check if lesson exists by video_url (which contains the GUID)
+            const { data: existingLesson } = await supabaseAdmin
                 .from('lessons')
-                .upsert({
-                    id: VideoGuid,
-                    module_id: moduleId,
+                .select('id')
+                .eq('video_url', embedUrl)
+                .single();
+
+            if (!existingLesson) {
+                 const { error: lessonError } = await supabaseAdmin
+                .from('lessons')
+                .insert({
+                    module_id: module.id, // Use the valid UUID from the module
                     title: video.title || 'Nouvelle Leçon',
                     video_url: embedUrl,
                     duration: Math.round(video.length / 60).toString() || "10",
-                    order: 0,
-                    content: "Contenu synchronisé automatiquement."
-                }, { onConflict: 'id' });
+                    order: 0, // You might want to query max order + 1 here
+                    content: "Contenu synchronisé automatiquement depuis Bunny."
+                });
 
-            if (lessonError) {
-                console.error(`[BUNNY_WEBHOOK] Lesson upsert error:`, lessonError);
-                return NextResponse.json({ error: lessonError.message }, { status: 500 });
+                if (lessonError) {
+                    console.error(`[BUNNY_WEBHOOK] Lesson insert error:`, lessonError);
+                    return NextResponse.json({ error: lessonError.message }, { status: 500 });
+                }
+            } else {
+                console.log(`[BUNNY_WEBHOOK] Lesson already exists for video ${VideoGuid}, skipping.`);
             }
 
             console.log(`[BUNNY_WEBHOOK] Successfully synced video: ${video.title}`);
