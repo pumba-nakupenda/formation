@@ -39,7 +39,13 @@ export async function getCourses(): Promise<Course[]> {
     const supabase = createClient();
     const { data, error } = await supabase
         .from('courses')
-        .select('*')
+        .select(`
+            *,
+            modules (
+                *,
+                lessons (*)
+            )
+        `)
         .order('created_at', { ascending: false });
 
     if (error) {
@@ -47,7 +53,21 @@ export async function getCourses(): Promise<Course[]> {
         return [];
     }
 
-    return data as Course[];
+    const courses = data as Course[];
+
+    // Sort modules and lessons by 'order'
+    courses.forEach(course => {
+        if (course.modules) {
+            course.modules.sort((a: any, b: any) => a.order - b.order);
+            course.modules.forEach((mod: any) => {
+                if (mod.lessons) {
+                    mod.lessons.sort((a: any, b: any) => a.order - b.order);
+                }
+            });
+        }
+    });
+
+    return courses;
 }
 
 /**
