@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Load API Key from env
-const BUNNY_API_KEY = process.env.BUNNY_API_KEY;
-
 export async function GET() {
+    // Load API Key inside handler to avoid build-time issues
+    const BUNNY_API_KEY = process.env.BUNNY_API_KEY;
+
     // Collecte des logs pour retour utilisateur
     const logs: string[] = [];
 
